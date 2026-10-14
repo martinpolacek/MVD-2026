@@ -35,9 +35,9 @@ Vytvořte invertovaný index: slovník, kde klíčem je slovo a hodnotou seznam 
 
 Napište funkci `tf_idf`, která pro dotaz, jeden invertovaný index a dané dokumenty vrátí skóre každého dokumentu:
 
-$$
-score(q,d) = TF\_IDF(q,d) = \sum\limits_{w \in q \cap d} c(w, q)\, c(w, d)\, \log\!\left(\frac{M+1}{df(w)}\right)
-$$
+```math
+score(q,d) = \text{TF-IDF}(q,d) = \sum\limits_{w \in q \cap d} c(w, q)\, c(w, d)\, \log\!\left(\frac{M+1}{df(w)}\right)
+```
 
 - $q$ - dotaz, $d$ - dokument,
 - $c(w, q)$, $c(w, d)$ - kolikrát je slovo $w$ v dotazu, resp. v dokumentu,
@@ -48,9 +48,9 @@ $$
 
 Skóre titulku a textu spojte do jednoho skóre dokumentu pomocí parametru $\alpha$:
 
-$$
-score(q,d) = \alpha \; TF\_IDF\_title(q,d) + (1-\alpha) \; TF\_IDF\_text(q,d)
-$$
+```math
+score(q,d) = \alpha \; \text{TF-IDF}_{\text{title}}(q,d) + (1-\alpha) \; \text{TF-IDF}_{\text{text}}(q,d)
+```
 
 Pro $\alpha = 0.7$ a dotaz `coursera vs udacity machine learning` by výsledky měly vypadat takto (spaCy 3.8, model `en_core_web_sm` 3.8.0; s jinou verzí nebo jiným předzpracováním se skóre mohou mírně lišit):
 
