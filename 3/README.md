@@ -13,9 +13,9 @@ Potřebné knihovny: `numpy`, `torch`
     - `word2idx` - slovník, který vrátí index slova (např. `word2idx["queen"]`).
 3. Napište funkci `cossim(a, b)`, která vrátí kosinovou podobnost dvou vektorů:
 
-$$
+```math
 \text{similarity}(a, b) = \cos(\theta) = \frac{a \cdot b}{\lVert a \rVert \, \lVert b \rVert}
-$$
+```
 
 4. Napište funkci pro hledání slovních analogií a vypište 5 nejpodobnějších slov pro analogii `king - man + woman = ?`. Vstupní slova do výsledku nepočítejte. Vyzkoušejte i několik vlastních analogií.
 
