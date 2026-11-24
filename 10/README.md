@@ -39,13 +39,101 @@ Pravidla:
 - `dev` slouží k ladění (learning rate, počet epoch), `test` jen k závěrečnému vyhodnocení. Na žádném z nich netrénujte.
 - Všechny výsledky uvádějte jako **průměr F1 ze tří seedů** (a vypište i jednotlivé hodnoty). F1 počítejte přes `f1_score(y, p, average="weighted")`.
 
+## Jak na to
+
+Ukázky níže jsou stavební kameny, smyčku přes epochy, vyhodnocení a ukládání výsledků si z nich složíte sami. Stejný kód použijete pro oba modely, liší se jen jméno modelu, data a parametry trénování.
+
+**1. Tokenizer a model.** Obojí se podle jména samo stáhne z Hugging Face.
+
+```python
+import torch
+from transformers import AutoTokenizer, AutoModelForSequenceClassification
+
+device = "cuda" if torch.cuda.is_available() else "cpu"
+name = "AILabTUL/mELECTRA"                       # nebo "intfloat/multilingual-e5-small"
+
+tok = AutoTokenizer.from_pretrained(name)
+model = AutoModelForSequenceClassification.from_pretrained(name, num_labels=2).to(device)
+```
+
+`AutoModelForSequenceClassification` přidá nad předtrénovaný kodér klasifikační hlavu se dvěma výstupy. Hlava je na začátku náhodná, proto knihovna vypíše varování, že některé váhy nejsou inicializované. To je v pořádku.
+
+**2. Z textu na čísla.** Recenze v dávce jsou různě dlouhé, tokenizer je doplní na stejnou délku (`padding`) a příliš dlouhé ořízne (`truncation`).
+
+```python
+enc = tok(["Great movie!", "Nejhorší film, jaký jsem kdy viděl."],
+          padding=True, truncation=True, max_length=512, return_tensors="pt")
+print(enc["input_ids"].shape)                    # (počet textů, délka nejdelšího textu)
+print(enc["attention_mask"])                     # 1 = skutečný token, 0 = výplň
+```
+
+**3. Dávky.** `DataLoader` vybírá náhodné dávky a funkce `collate` každou z nich tokenizuje:
+
+```python
+from torch.utils.data import DataLoader
+
+def collate(batch):
+    texts, labels = zip(*batch)
+    enc = tok(list(texts), padding=True, truncation=True, max_length=512, return_tensors="pt")
+    return enc["input_ids"], enc["attention_mask"], torch.tensor(labels)
+
+loader = DataLoader(list(zip(en_text, en_label)), batch_size=16, shuffle=True, collate_fn=collate)
+```
+
+**4. Jeden trénovací krok.** Když modelu předáte `labels`, vrátí rovnou i loss (křížovou entropii). Learning rate během prvních 10 % kroků roste (warmup) a pak lineárně klesá k nule:
+
+```python
+from transformers import get_linear_schedule_with_warmup
+
+epochs, lr = 10, 5e-5
+steps = len(loader) * epochs
+optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=0.01)
+scheduler = get_linear_schedule_with_warmup(optimizer, int(0.1 * steps), steps)
+
+model.train()
+ids, mask, y = next(iter(loader))                # jedna dávka, ve smyčce projdete všechny
+out = model(input_ids=ids.to(device), attention_mask=mask.to(device), labels=y.to(device))
+out.loss.backward()
+torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+optimizer.step()
+scheduler.step()
+optimizer.zero_grad()
+print(out.loss.item())                           # na začátku kolem 0,69 = ln 2, model hádá
+```
+
+**5. Předpověď.** Při vyhodnocení přepněte model do `eval()` (vypne dropout) a vypněte gradienty. Výstup `logits` má tvar (počet textů, 2), třída je sloupec s větší hodnotou:
+
+```python
+model.eval()
+with torch.no_grad():
+    enc = tok(dev_text[:64], padding=True, truncation=True, max_length=512, return_tensors="pt").to(device)
+    out = model(input_ids=enc["input_ids"], attention_mask=enc["attention_mask"])
+pred = out.logits.argmax(dim=1).cpu().tolist()   # 0 / 1 pro každý text
+```
+
+Takhle zpracujete jednu dávku 64 textů. Pro všechny texty projděte dávky ve smyčce **bez zamíchání**, jinak předpovědi nebudou odpovídat popiskům. Stejně získáte i slabé popisky v úloze 2.
+
+**6. Seedy.** Před vytvořením modelu nastavte `torch.manual_seed(seed)`. Pro další seed vytvořte model znovu, jinak byste pokračovali v už natrénovaném. Starý model předtím uvolněte z paměti GPU: `del model; torch.cuda.empty_cache()`.
+
+Doporučené parametry na začátek (`max_length=512`, warmup 10 %):
+
+| Trénování | batch | epoch | learning rate |
+|---|---|---|---|
+| mELECTRA, úloha 1 | 16 | 10 | vyzkoušejte sami, např. 2e-5, 1e-4, 3e-4 |
+| e5-small, úloha 2 | 16 | 5 | 5e-5 |
+| mELECTRA, úloha 3 | 32 | 8 | podle úlohy 1 |
+
+Kód si nejdřív vyzkoušejte na pár dávkách a teprve pak ho pusťte celý na MetaCentru jako dávkovou úlohu s GPU (fronta `gpu`, `ngpus=1`, stejně jako ve cvičeních 3 a 5).
+
+Pro představu: na kartě NVIDIA L40 trvá úloha 1 i učitel asi 40 sekund na jeden seed a stačí 8 GB paměti GPU.
+
 ## Úloha 1 - ELECTRA na angličtině
 
-1. Naprogramujte trénovací smyčku a funkci `evaluate(model, texty, popisky)`, která vrátí přesnost a F1. Texty tokenizujte po dávkách (`tok(texty, padding=True, truncation=True, max_length=512, return_tensors="pt")`) a modelu předejte `input_ids` a `attention_mask`. Model vytvořte pomocí `AutoModelForSequenceClassification.from_pretrained(..., num_labels=2)`.
+1. Podle ukázek naprogramujte funkci `train(name, texty, popisky, epochs, lr, batch_size, seed)`, která vrátí natrénovaný model s tokenizerem, a funkci `evaluate(tok, model, texty, popisky)`, která vrátí přesnost a F1 (`accuracy_score` a `f1_score` ze `sklearn.metrics`). Budete je používat ve všech úlohách.
 
-2. Dolaďte mELECTRA na 1 000 anglických recenzích. Vyzkoušejte aspoň tři learning raty a vykreslete trénovací loss. Při příliš velkém learning ratu se model zhroutí (loss zůstane kolem 0,69) a předpovídá jen jednu třídu. Tak poznáte, že jste to přehnali.
+2. Dolaďte mELECTRA na 1 000 anglických recenzích. Vyzkoušejte aspoň tři learning raty, vykreslete průměrnou trénovací loss po epochách a nejlepší learning rate vyberte podle `dev`. Při příliš velkém learning ratu se model zhroutí: loss zůstane kolem 0,69 a model předpovídá pořád stejnou třídu.
 
-3. Vyhodnoťte model na českém `dev` a `test`. Česky se přitom vůbec neučil.
+3. Vybraný model vyhodnoťte na českém `dev` a `test`. Na českých recenzích se přitom nedolaďoval, češtinu zná jen z předtrénování.
 
 ## Úloha 2 - Učitel
 
