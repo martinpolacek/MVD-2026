@@ -9,7 +9,7 @@ Máte popsané jen anglické recenze, ale klasifikátor potřebujete na české.
 
 Trénování pouštějte na GPU (MetaCentrum nebo Google Colab).
 
-Potřebné knihovny: `transformers`, `torch`, `datasets`, `scikit-learn`, `matplotlib`
+Potřebné knihovny: `transformers`, `torch`, `datasets`, `scikit-learn`, `matplotlib`, `tqdm`
 
 ## Data
 
@@ -101,6 +101,16 @@ optimizer.zero_grad()
 print(out.loss.item())                           # na začátku kolem 0,69 = ln 2, model hádá
 ```
 
+Ve smyčce přes všechny dávky se hodí ukazatel průběhu `tqdm`. Ukáže, kolik dávek už model zpracoval a kolik času zbývá:
+
+```python
+from tqdm.auto import tqdm
+
+for epoch in range(epochs):
+    for ids, mask, y in tqdm(loader, desc=f"epocha {epoch + 1}/{epochs}"):
+        ...                                      # trénovací krok jako výše
+```
+
 **5. Předpověď.** Při vyhodnocení přepněte model do `eval()` (vypne dropout) a vypněte gradienty. Výstup `logits` má tvar (počet textů, 2), třída je sloupec s větší hodnotou:
 
 ```python
@@ -131,7 +141,7 @@ Pro představu: na kartě NVIDIA L40 trvá úloha 1 i učitel asi 40 sekund na j
 
 1. Podle ukázek naprogramujte funkci `train(name, texty, popisky, epochs, lr, batch_size, seed)`, která vrátí natrénovaný model s tokenizerem, a funkci `evaluate(tok, model, texty, popisky)`, která vrátí přesnost a F1 (`accuracy_score` a `f1_score` ze `sklearn.metrics`). Budete je používat ve všech úlohách.
 
-2. Dolaďte mELECTRA na 1 000 anglických recenzích. Vyzkoušejte aspoň tři learning raty, vykreslete průměrnou trénovací loss po epochách a nejlepší learning rate vyberte podle `dev`. Při příliš velkém learning ratu se model zhroutí: loss zůstane kolem 0,69 a model předpovídá pořád stejnou třídu.
+2. Dolaďte mELECTRA na 1 000 anglických recenzích. Vyzkoušejte aspoň tři learning raty, vykreslete průměrný trénovací loss po epochách a nejlepší learning rate vyberte podle `dev`. Při příliš velkém learning ratu se model zhroutí: loss zůstane kolem 0,69 a model předpovídá pořád stejnou třídu.
 
 3. Vybraný model vyhodnoťte na českém `dev` a `test`. Na českých recenzích se přitom nedolaďoval, češtinu zná jen z předtrénování.
 
@@ -142,6 +152,8 @@ Pro představu: na kartě NVIDIA L40 trvá úloha 1 i učitel asi 40 sekund na j
 2. Učitelem označte všech 5 000 recenzí z `cs_unlabeled`. Vypište podíl pozitivních popisků. Pokud vyjde blízko 0 nebo 1, učitel češtinu nezvládá a popisky jsou k ničemu.
 
 ## Úloha 3 - ELECTRA na slabých popiscích
+
+Slabý popisek je předpověď učitele, tedy 0 nebo 1 (třída s větší hodnotou `logits`, viz krok 5). Slabý je proto, že ho neurčil člověk, ale model, který se občas splete.
 
 1. Natrénujte **novou** mELECTRA na 5 000 českých recenzích s popisky od učitele a vyhodnoťte ji na `dev` a `test`. Na `test` má dosáhnout průměrné **F1 aspoň 72 %**.
 
